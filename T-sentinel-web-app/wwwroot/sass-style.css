@@ -1,0 +1,8 @@
+/*!*****************************************************************************************************************!*\
+  !*** css ./node_modules/css-loader/dist/cjs.js!./node_modules/sass-loader/dist/cjs.js!./assets/scss/style.scss ***!
+  \*****************************************************************************************************************/
+.bi-list-temp:before {
+  content: "\f2c8";
+  font-family: "Font Awesome 6";
+  font-size: 16px;
+}
