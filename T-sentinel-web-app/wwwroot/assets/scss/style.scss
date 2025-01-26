@@ -1,2 +1,10 @@
 ﻿@import "variables/vars";
 @import "Icons/icons";
+@import "fonts/fonts";
+@import 'header';
+@import './Modules/modules';
+@import './Modules/modulesRobotStatus';
+
+body {
+    background-color: #F5F5F5;
+}

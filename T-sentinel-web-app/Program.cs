@@ -1,10 +1,16 @@
 using T_sentinel_web_app.Components;
+using System.Collections.Generic;
+using SimpleMqtt;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+
+var sqlConnectionString = "";
+builder.Services.AddSingleton<IRoutineRepository>(new SqlRoutineRepository(sqlConnectionString));
+
 
 var app = builder.Build();
 
@@ -18,11 +24,9 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-
 app.UseAntiforgery();
 
 app.MapStaticAssets();
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();

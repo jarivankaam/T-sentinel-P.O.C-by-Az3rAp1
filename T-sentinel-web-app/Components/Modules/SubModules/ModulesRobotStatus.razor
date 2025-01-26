@@ -1,0 +1,194 @@
+<section class="section-modules--block__robotstatus">
+    <div class="container">
+        <div class="section-modules--block--header">
+            <h2>Robot status</h2>
+        </div>
+        <div class="section-modules--block--body">
+            <div>
+                <p>Robot status: @status</p>
+                <div class="vis">
+                    <p>Route bewerken</p>
+                    <div class="hide">
+                        <textarea name="commands" id="commands" cols="30" rows="5" @bind="commandInput" placeholder="Right,Left"></textarea>
+                        <button @onclick="SubmitCommands">Versturen</button>
+                        <div>
+                            <h3>Vorige route:</h3>
+                            <p>@formattedCommands</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+@code {
+    private SqlRoutineRepository routineRepository = new SqlRoutineRepository("Server=aei-sql2.avans.nl,1443;Database=DB2231011;UID=ITI2231011;password=V6uaH6D3;TrustServerCertificate=true;");
+    private string? status = "offline";
+
+    private string commandInput = string.Empty;
+    private List<string> commandList = new();
+    private string formattedCommands;
+    private MqqtCOntroller? mqqtController;
+
+    protected override async Task OnInitializedAsync()
+    {
+        mqqtController = new MqqtCOntroller("hivemq.webclient.1736429079800", "T-sentinel");
+
+        try
+        {
+            mqqtController.connect();
+           
+
+            // Load previous commands from the database
+            await LoadPreviousCommands();
+
+            // Continuously update status
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    // mqqtController.ReceiveMessageAsync("Robot");
+                    if (mqqtController?.result != null)
+                    {
+                        if (mqqtController?.result == "Online")
+                        {
+                            status = mqqtController.result;
+                            await InvokeAsync(StateHasChanged);
+                        }
+                    }
+                    await Task.Delay(5000);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing MQTT: {ex.Message}");
+        }
+    }
+
+    private async Task SubmitCommands()
+    {
+        if (!string.IsNullOrWhiteSpace(commandInput))
+        {
+            var commands = commandInput.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                       .Select(c => c.Trim())
+                                       .ToList();
+
+            // Validate the commands
+            var validationResults = ValidateCommands(commands);
+            if (!validationResults.isValid)
+            {
+                Console.WriteLine($"Invalid commands: {validationResults.errorMessage}");
+                return; // Stop if validation fails
+            }
+
+            commandList.AddRange(commands);
+
+            try
+            {
+                await SendRoutine(commands);
+                await LoadPreviousCommands(); // Refresh the previous commands after saving
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error submitting commands: {ex.Message}");
+            }
+
+            commandInput = string.Empty;
+        }
+    }
+
+    private async Task SendRoutine(List<string> commands)
+    {
+        if (mqqtController == null)
+        {
+            Console.WriteLine("MQTT Controller is not initialized.");
+            return;
+        }
+
+        var commandString = ConvertListToString(commands);
+
+        try
+        {
+            // Send to MQTT
+            await mqqtController.SendMessage(commandString, null);
+            Console.WriteLine("Commands sent via MQTT successfully.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error sending commands via MQTT: {ex.Message}");
+            return; // Stop execution if MQTT fails
+        }
+
+        try
+        {
+            // Save to database
+            var routine = new Routine
+            {
+                Commands = commandString,
+                CreatedAt = DateTime.Now // Example field
+            };
+
+            routineRepository.InsertRoutine(routine);
+            Console.WriteLine("Commands saved to the database successfully.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving commands to the database: {ex.Message}");
+        }
+    }
+
+    private async Task LoadPreviousCommands()
+    {
+        try
+        {
+            var routines = routineRepository.GetRoutines();
+
+            if (routines.Any())
+            {
+                var latestRoutine = routines.OrderByDescending(r => r.CreatedAt).FirstOrDefault();
+                formattedCommands = $" {latestRoutine.CreatedAt} - {latestRoutine?.Commands}" ?? "No previous commands found.";
+            }
+            else
+            {
+                formattedCommands = "No previous commands found.";
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading previous commands: {ex.Message}");
+        }
+    }
+
+    private static string ConvertListToString(List<string> stringList)
+    {
+        return string.Join(",", stringList);
+    }
+
+    private (bool isValid, string errorMessage) ValidateCommands(List<string> commands)
+{
+    // Define the list of valid commands
+    var validCommands = new HashSet<string> { "right", "left", "forward", "backward", "stop" };
+
+    foreach (var command in commands)
+    {
+        var lowerCommand = command.ToLower();
+        
+        if (string.IsNullOrWhiteSpace(lowerCommand))
+        {
+            return (false, "Commands cannot be empty or whitespace.");
+        }
+
+        if (!validCommands.Contains(lowerCommand))
+        {
+            return (false, $"Invalid command: '{command}'. Valid commands are: {string.Join(", ", validCommands)}.");
+        }
+    }
+
+    return (true, string.Empty); // All commands are valid
+}
+
+}
